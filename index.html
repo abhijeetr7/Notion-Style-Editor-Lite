@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notion-Style Editor Lite</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Import Inter font for a clean look */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9fafb; /* Light gray background */
+        }
+        /* Ensure the contenteditable area doesn't show an outline on focus */
+        .editor-content:focus {
+            outline: none;
+        }
+        /* Basic styling for markdown-like elements within the editor */
+        .editor-content h1 { font-size: 2.25rem; font-weight: 700; margin-bottom: 1rem; }
+        .editor-content h2 { font-size: 1.875rem; font-weight: 600; margin-bottom: 0.75rem; }
+        .editor-content h3 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
+        .editor-content strong { font-weight: 700; }
+        .editor-content em { font-style: italic; }
+        .editor-content ul { list-style-type: disc; margin-left: 1.5rem; }
+        .editor-content ol { list-style-type: decimal; margin-left: 1.5rem; }
+        .editor-content li { margin-bottom: 0.25rem; }
+        .editor-content a { color: #2563eb; text-decoration: underline; }
+        /* Style for highlighted text */
+        .highlight { background-color: #fde047; padding: 2px 0; border-radius: 3px; } /* Yellow highlight */
+        /* Style for internal page links */
+        .page-link { color: #2563eb; text-decoration: underline; cursor: pointer; }
+
+        /* Custom scrollbar for sidebar for better aesthetics */
+        .sidebar-scroll {
+            scrollbar-width: thin; /* For Firefox */
+            scrollbar-color: #d1d5db #f3f4f6; /* For Firefox */
+        }
+        .sidebar-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .sidebar-scroll::-webkit-scrollbar-track {
+            background: #f3f4f6; /* Light track */
+            border-radius: 10px;
+        }
+        .sidebar-scroll::-webkit-scrollbar-thumb {
+            background-color: #d1d5db; /* Gray thumb */
+            border-radius: 10px;
+            border: 2px solid #f3f4f6;
+        }
+        /* Custom scrollbar for editor area */
+        .editor-scroll {
+             scrollbar-width: thin;
+             scrollbar-color: #d1d5db #f3f4f6;
+        }
+        .editor-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .editor-scroll::-webkit-scrollbar-track {
+            background: #f3f4f6;
+            border-radius: 10px;
+        }
+        .editor-scroll::-webkit-scrollbar-thumb {
+            background-color: #d1d5db;
+            border-radius: 10px;
+            border: 2px solid #f3f4f6;
+        }
+
+        /* Toolbar button styling */
+        .toolbar-btn {
+            @apply p-2 rounded-md hover:bg-gray-200 transition-colors duration-150 text-gray-700;
+        }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar for Notes List and Tags -->
+    <aside class="w-64 bg-gray-50 border-r border-gray-200 p-4 flex flex-col shadow-md">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Notes</h2>
+        <button id="newNoteBtn" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors duration-200 mb-4 shadow-sm">
+            <i class="fas fa-plus mr-2"></i>New Note
+        </button>
+
+        <!-- Note List Area -->
+        <div id="noteList" class="flex-grow overflow-y-auto sidebar-scroll pr-2">
+            <!-- Notes will be dynamically loaded here by JavaScript -->
+        </div>
+
+        <hr class="my-4 border-gray-200">
+
+        <!-- Tags Section -->
+        <h3 class="text-lg font-semibold text-gray-800 mb-3">Tags</h3>
+        <div id="tagFilter" class="flex flex-wrap gap-2 pb-4">
+            <!-- Tags will be dynamically loaded here by JavaScript -->
+        </div>
+    </aside>
+
+    <!-- Main Content Area: Toolbar + Editor -->
+    <main class="flex-1 flex flex-col bg-white">
+        <!-- Toolbar for formatting and actions -->
+        <div class="bg-gray-100 border-b border-gray-200 p-3 flex items-center justify-between shadow-sm">
+            <div class="flex items-center space-x-2">
+                <!-- Formatting buttons -->
+                <button id="boldBtn" class="toolbar-btn" title="Bold (Ctrl+B)"><i class="fas fa-bold"></i></button>
+                <button id="italicBtn" class="toolbar-btn" title="Italic (Ctrl+I)"><i class="fas fa-italic"></i></button>
+                <button id="highlightBtn" class="toolbar-btn" title="Highlight"><i class="fas fa-highlighter"></i></button>
+                <button id="linkBtn" class="toolbar-btn" title="Page Link (Ctrl+K)"><i class="fas fa-link"></i></button>
+                <!-- Heading selection dropdown -->
+                <select id="headingSelect" class="p-1 rounded-md border border-gray-300 text-gray-700 text-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="p">Paragraph</option>
+                    <option value="h1">Heading 1</option>
+                    <option value="h2">Heading 2</option>
+                    <option value="h3">Heading 3</option>
+                </select>
+                <button id="ulBtn" class="toolbar-btn" title="Unordered List"><i class="fas fa-list-ul"></i></button>
+                <button id="olBtn" class="toolbar-btn" title="Ordered List"><i class="fas fa-list-ol"></i></button>
+            </div>
+            <div class="flex items-center space-x-2">
+                <!-- Current note title (editable) -->
+                <span id="currentNoteTitleDisplay" class="text-lg font-medium text-gray-700 mr-4 cursor-text" contenteditable="true"></span>
+                <!-- Save and Download buttons -->
+                <button id="saveBtn" class="bg-green-500 text-white py-1.5 px-3 rounded-md hover:bg-green-600 transition-colors duration-200 shadow-sm">
+                    <i class="fas fa-save mr-1"></i>Save
+                </button>
+                <button id="downloadBtn" class="bg-purple-500 text-white py-1.5 px-3 rounded-md hover:bg-purple-600 transition-colors duration-200 shadow-sm">
+                    <i class="fas fa-download mr-1"></i>Download
+                </button>
+            </div>
+        </div>
+
+        <!-- Editor Area -->
+        <div class="flex-1 p-8 overflow-y-auto editor-scroll">
+            <div id="editor" contenteditable="true" class="editor-content min-h-full p-6 bg-white rounded-lg shadow-inner border border-gray-200 focus:ring-blue-500 focus:border-blue-500">
+                <!-- Initial content for the editor -->
+                <p>Start typing your note here...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Link Modal for creating internal page links -->
+    <div id="linkModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-96">
+            <h3 class="text-xl font-semibold mb-4">Create Page Link</h3>
+            <input type="text" id="linkText" placeholder="Link text (optional)" class="w-full p-2 border border-gray-300 rounded-md mb-3 focus:ring-blue-500 focus:border-blue-500">
+            <input type="text" id="linkPageTitle" placeholder="Page title to link to" class="w-full p-2 border border-gray-300 rounded-md mb-4 focus:ring-blue-500 focus:border-blue-500">
+            <div id="linkPageSuggestions" class="border border-gray-200 rounded-md max-h-40 overflow-y-auto mb-4 hidden"></div>
+            <div class="flex justify-end space-x-3">
+                <button id="cancelLinkBtn" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400">Cancel</button>
+                <button id="insertLinkBtn" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">Insert Link</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Box for notifications (e.g., "Saved!", "Note deleted!") -->
+    <div id="messageBox" class="fixed top-4 right-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg hidden z-50">
+        <span id="messageText"></span>
+        <button id="closeMessageBox" class="ml-4 text-white hover:text-gray-200">&times;</button>
+    </div>
+
+    <script>
+        // --- Utility Functions ---
+
+        /**
+         * Displays a temporary message box notification.
+         * @param {string} message - The message to display.
+         * @param {string} type - 'info', 'success', or 'error' to change background color.
+         */
+        function showMessage(message, type = 'info') {
+            const messageBox = document.getElementById('messageBox');
+            const messageText = document.getElementById('messageText');
+            messageText.textContent = message;
+            // Reset classes and apply new ones based on type
+            messageBox.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50`;
+            if (type === 'success') {
+                messageBox.classList.add('bg-green-600');
+            } else if (type === 'error') {
+                messageBox.classList.add('bg-red-600');
+            } else {
+                messageBox.classList.add('bg-blue-600');
+            }
+            messageBox.classList.remove('hidden'); // Show the message box
+            // Hide the message box after 3 seconds
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Close button for the message box
+        document.getElementById('closeMessageBox').addEventListener('click', () => {
+            document.getElementById('messageBox').classList.add('hidden');
+        });
+
+        // --- DOM Element References ---
+        const editor = document.getElementById('editor');
+        const noteList = document.getElementById('noteList');
+        const newNoteBtn = document.getElementById('newNoteBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const tagFilter = document.getElementById('tagFilter');
+        const currentNoteTitleDisplay = document.getElementById('currentNoteTitleDisplay');
+
+        // Toolbar buttons
+        const boldBtn = document.getElementById('boldBtn');
+        const italicBtn = document.getElementById('italicBtn');
+        const highlightBtn = document.getElementById('highlightBtn');
+        const linkBtn = document.getElementById('linkBtn');
+        const headingSelect = document.getElementById('headingSelect');
+        const ulBtn = document.getElementById('ulBtn');
+        const olBtn = document.getElementById('olBtn');
+
+        // Link Modal elements
+        const linkModal = document.getElementById('linkModal');
+        const linkText = document.getElementById('linkText');
+        const linkPageTitle = document.getElementById('linkPageTitle');
+        const linkPageSuggestions = document.getElementById('linkPageSuggestions');
+        const cancelLinkBtn = document.getElementById('cancelLinkBtn');
+        const insertLinkBtn = document.getElementById('insertLinkBtn');
+
+        // --- Global State Variables ---
+        let notes = []; // Array to store all notes
+        let currentNoteId = null; // ID of the currently active note
+        let savedRange = null; // To store the text selection range for link insertion
+
+        // --- Data Management Functions ---
+
+        /**
+         * Loads notes from localStorage. If no notes exist, a default welcome note is created.
+         */
+        function loadNotes() {
+            const storedNotes = localStorage.getItem('notionStyleNotes');
+            if (storedNotes) {
+                notes = JSON.parse(storedNotes);
+            } else {
+                // Create a default note if localStorage is empty
+                notes = [{
+                    id: crypto.randomUUID(), // Generate a unique ID for the note
+                    title: 'Welcome Note',
+                    content: '<p>Welcome to your Notion-Style Editor Lite!</p><p>You can use <strong>rich-text formatting</strong> and basic markdown like **bold** and *italic*.</p><p>Type #tags to categorize your notes (e.g., #todo #ideas).</p><p>Try linking to other pages by typing [[Page Title]].</p><p>Use the toolbar above for quick formatting and save/download options.</p>',
+                    tags: ['welcome', 'getting-started']
+                }];
+            }
+            renderNoteList(); // Display the loaded notes in the sidebar
+            if (notes.length > 0) {
+                openNote(notes[0].id); // Open the first note by default
+            }
+        }
+
+        /**
+         * Saves the current 'notes' array to localStorage.
+         */
+        function saveNotes() {
+            localStorage.setItem('notionStyleNotes', JSON.stringify(notes));
+            showMessage('Notes saved!', 'success');
+        }
+
+        // --- Note Operations Functions ---
+
+        /**
+         * Creates a new empty note, adds it to the 'notes' array, and opens it.
+         */
+        function createNewNote() {
+            const newNote = {
+                id: crypto.randomUUID(),
+                title: 'Untitled Note',
+                content: '<p>New note content...</p>',
+                tags: []
+            };
+            notes.unshift(newNote); // Add the new note to the beginning of the array
+            renderNoteList(); // Update the sidebar note list
+            openNote(newNote.id); // Open the newly created note
+            editor.focus(); // Focus on the editor
+            // Make the title editable and select it for easy renaming
+            currentNoteTitleDisplay.contentEditable = true;
+            currentNoteTitleDisplay.focus();
+            document.execCommand('selectAll', false, null);
+        }
+
+        /**
+         * Opens a specific note by its ID, loading its content into the editor.
+         * @param {string} id - The ID of the note to open.
+         */
+        function openNote(id) {
+            currentNoteId = id;
+            const note = notes.find(n => n.id === id);
+            if (note) {
+                editor.innerHTML = note.content; // Load note content into the editor
+                currentNoteTitleDisplay.textContent = note.title; // Display note title
+                currentNoteTitleDisplay.contentEditable = true; // Ensure title is editable
+                renderNoteList(); // Re-render note list to highlight the active note
+                extractAndRenderTags(); // Update tags displayed in the filter section
+            }
+        }
+
+        /**
+         * Updates the content of the currently active note in the 'notes' array.
+         * This function is typically called on editor input events.
+         */
+        function updateCurrentNoteContent() {
+            if (currentNoteId) {
+                const note = notes.find(n => n.id === currentNoteId);
+                if (note) {
+                    note.content = editor.innerHTML; // Get content directly from editor's innerHTML
+                    note.tags = extractTagsFromContent(editor.innerHTML); // Extract tags from the updated content
+                    renderTagFilter(); // Update the tag filter display
+                    saveNotes(); // Auto-save changes
+                }
+            }
+        }
+
+        /**
+         * Updates the title of the currently active note in the 'notes' array.
+         * This function is typically called when the title display loses focus.
+         */
+        function updateCurrentNoteTitle() {
+            if (currentNoteId) {
+                const note = notes.find(n => n.id === currentNoteId);
+                if (note) {
+                    note.title = currentNoteTitleDisplay.textContent.trim();
+                    if (!note.title) {
+                        note.title = 'Untitled Note'; // Prevent an empty title
+                        currentNoteTitleDisplay.textContent = 'Untitled Note';
+                    }
+                    renderNoteList(); // Update the sidebar list with the new title
+                    saveNotes(); // Save changes
+                }
+            }
+        }
+
+        /**
+         * Deletes a note by its ID after user confirmation.
+         * @param {string} id - The ID of the note to delete.
+         */
+        function deleteNote(id) {
+            // Using a simple confirm dialog for deletion. For a real app, use a custom modal.
+            if (confirm('Are you sure you want to delete this note?')) {
+                notes = notes.filter(n => n.id !== id); // Remove the note from the array
+                saveNotes(); // Save updated notes
+                renderNoteList(); // Re-render the note list
+                if (notes.length > 0) {
+                    openNote(notes[0].id); // Open the first remaining note
+                } else {
+                    // If no notes left, clear editor and reset state
+                    editor.innerHTML = '<p>No notes. Create a new one!</p>';
+                    currentNoteTitleDisplay.textContent = 'No Note Selected';
+                    currentNoteId = null;
+                    currentNoteTitleDisplay.contentEditable = false;
+                }
+                extractAndRenderTags(); // Update tags after deletion
+                showMessage('Note deleted!', 'info');
+            }
+        }
+
+        // --- Rendering Functions ---
+
+        /**
+         * Renders the list of notes in the sidebar, optionally filtering by a tag.
+         * @param {string|null} filterTag - The tag to filter by, or null to show all notes.
+         */
+        function renderNoteList(filterTag = null) {
+            noteList.innerHTML = ''; // Clear existing list
+            // Filter notes based on the provided tag
+            const filteredNotes = filterTag
+                ? notes.filter(note => note.tags.includes(filterTag))
+                : notes;
+
+            // Display a message if no notes match the filter
+            if (filteredNotes.length === 0 && filterTag) {
+                const noNotesMsg = document.createElement('p');
+                noNotesMsg.className = 'text-gray-500 text-sm mt-4';
+                noNotesMsg.textContent = `No notes found with tag: #${filterTag}`;
+                noteList.appendChild(noNotesMsg);
+            }
+
+            // Create and append a div for each note
+            filteredNotes.forEach(note => {
+                const noteDiv = document.createElement('div');
+                // Apply active state styling if it's the currently open note
+                noteDiv.className = `flex items-center justify-between p-2 rounded-md cursor-pointer hover:bg-gray-200 transition-colors duration-150 ${currentNoteId === note.id ? 'bg-blue-100 font-medium' : ''}`;
+                noteDiv.innerHTML = `
+                    <span class="text-gray-800 text-sm flex-grow truncate">${note.title}</span>
+                    <button class="delete-note-btn text-gray-400 hover:text-red-500 ml-2 p-1 rounded-full hover:bg-gray-300 transition-colors duration-150" data-id="${note.id}" title="Delete Note">
+                        <i class="fas fa-trash-alt text-xs"></i>
+                    </button>
+                `;
+                // Event listener to open the note when its title is clicked
+                noteDiv.querySelector('span').addEventListener('click', () => openNote(note.id));
+                // Event listener to delete the note when the trash icon is clicked
+                noteDiv.querySelector('.delete-note-btn').addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent the parent div's click (opening note)
+                    deleteNote(note.id);
+                });
+                noteList.appendChild(noteDiv);
+            });
+        }
+
+        /**
+         * Extracts tags from HTML content using a regex.
+         * @param {string} htmlContent - The HTML string to extract tags from.
+         * @returns {string[]} An array of unique, lowercase tags.
+         */
+        function extractTagsFromContent(htmlContent) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = htmlContent;
+            const textContent = tempDiv.textContent || tempDiv.innerText; // Get plain text
+            const tagRegex = /#([a-zA-Z0-9_-]+)/g; // Regex to find #tag patterns
+            const matches = textContent.match(tagRegex);
+            // Return unique, lowercase tags
+            return matches ? Array.from(new Set(matches.map(tag => tag.substring(1).toLowerCase()))) : [];
+        }
+
+        /**
+         * Extracts all unique tags from all notes and then renders them in the tag filter section.
+         */
+        function extractAndRenderTags() {
+            const allTags = new Set();
+            notes.forEach(note => {
+                note.tags.forEach(tag => allTags.add(tag));
+            });
+            renderTagFilter(Array.from(allTags)); // Convert Set to Array and render
+        }
+
+        /**
+         * Renders the tag filter buttons in the sidebar.
+         * @param {string[]} tags - An array of tags to display.
+         */
+        function renderTagFilter(tags = []) {
+            tagFilter.innerHTML = ''; // Clear existing tags
+            if (tags.length === 0) {
+                const noTagsMsg = document.createElement('p');
+                noTagsMsg.className = 'text-gray-500 text-sm';
+                noTagsMsg.textContent = 'No tags yet.';
+                tagFilter.appendChild(noTagsMsg);
+                return;
+            }
+            // Create a button/span for each tag
+            tags.forEach(tag => {
+                const tagSpan = document.createElement('span');
+                tagSpan.className = 'bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full cursor-pointer hover:bg-blue-200 transition-colors duration-150';
+                tagSpan.textContent = `#${tag}`;
+                tagSpan.addEventListener('click', () => {
+                    renderNoteList(tag); // Filter notes by this tag when clicked
+                    showMessage(`Filtered by tag: #${tag}`);
+                });
+                tagFilter.appendChild(tagSpan);
+            });
+            // Add a "Show All" button if there are any tags to filter
+            if (notes.some(note => note.tags.length > 0)) {
+                const showAllBtn = document.createElement('span');
+                showAllBtn.className = 'bg-gray-200 text-gray-700 text-xs font-medium px-2.5 py-0.5 rounded-full cursor-pointer hover:bg-gray-300 transition-colors duration-150';
+                showAllBtn.textContent = 'Show All';
+                showAllBtn.addEventListener('click', () => {
+                    renderNoteList(); // Show all notes
+                    showMessage('Showing all notes.');
+                });
+                tagFilter.appendChild(showAllBtn);
+            }
+        }
+
+        // --- Editor Formatting Functions ---
+
+        /**
+         * Applies a rich-text formatting command to the selected text in the editor.
+         * Uses `document.execCommand` for browser-native formatting.
+         * @param {string} command - The formatting command (e.g., 'bold', 'italic', 'formatBlock').
+         * @param {string|null} value - The value for the command (e.g., 'h1' for 'formatBlock').
+         */
+        function applyFormatting(command, value = null) {
+            document.execCommand(command, false, value);
+            updateCurrentNoteContent(); // Save changes after formatting
+            editor.focus(); // Keep focus on the editor
+        }
+
+        /**
+         * Toggles highlighting for the selected text.
+         * Wraps selected text in a span with 'highlight' class or unwraps it if already highlighted.
+         */
+        function toggleHighlight() {
+            const selection = window.getSelection();
+            if (!selection.rangeCount) return; // No text selected
+
+            const range = selection.getRangeAt(0);
+            const selectedText = range.toString();
+
+            if (selectedText.length > 0) {
+                // Check if the selection is already inside a highlight span
+                // This check is simplified; more robust logic might traverse up the DOM tree.
+                const isAlreadyHighlighted = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE &&
+                                             range.commonAncestorContainer.classList.contains('highlight');
+
+                if (isAlreadyHighlighted) {
+                    // Remove highlight: unwrap the content from the highlight span
+                    const highlightSpan = range.commonAncestorContainer;
+                    const parentNode = highlightSpan.parentNode;
+                    while (highlightSpan.firstChild) {
+                        parentNode.insertBefore(highlightSpan.firstChild, highlightSpan);
+                    }
+                    parentNode.removeChild(highlightSpan); // Remove the empty span
+                } else {
+                    // Apply highlight: wrap selected text in a new span
+                    const span = document.createElement('span');
+                    span.classList.add('highlight');
+                    range.surroundContents(span); // Wrap the selected content
+                }
+                updateCurrentNoteContent(); // Save changes
+            }
+            editor.focus(); // Keep focus on the editor
+        }
+
+        /**
+         * Opens the modal for creating internal page links.
+         */
+        function openLinkModal() {
+            savedRange = window.getSelection().getRangeAt(0); // Save current selection range
+            const selectedText = savedRange.toString();
+            linkText.value = selectedText; // Pre-fill link text with currently selected text
+            linkPageTitle.value = ''; // Clear previous page title input
+            linkPageSuggestions.innerHTML = ''; // Clear previous suggestions
+            linkPageSuggestions.classList.add('hidden'); // Hide suggestions initially
+            linkModal.classList.remove('hidden'); // Show the modal
+            linkPageTitle.focus(); // Focus on the page title input
+        }
+
+        /**
+         * Closes the link modal.
+         */
+        function closeLinkModal() {
+            linkModal.classList.add('hidden'); // Hide the modal
+            editor.focus(); // Return focus to the editor
+        }
+
+        /**
+         * Inserts a page link into the editor at the saved selection.
+         * Validates if the linked page exists.
+         */
+        function insertPageLink() {
+            if (!savedRange) return; // No selection saved
+
+            const text = linkText.value.trim();
+            const pageTitle = linkPageTitle.value.trim();
+
+            if (!pageTitle) {
+                showMessage('Please enter a page title to link to.', 'error');
+                return;
+            }
+
+            // Check if the target page actually exists in our notes
+            const targetNote = notes.find(n => n.title.toLowerCase() === pageTitle.toLowerCase());
+            if (!targetNote) {
+                showMessage(`Page "${pageTitle}" not found. Please create it first.`, 'error');
+                return;
+            }
+
+            // Restore the saved selection before inserting the link
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(savedRange);
+
+            // Create the anchor element for the link
+            const link = document.createElement('a');
+            link.href = '#'; // Placeholder href, actual navigation handled by JS click listener
+            link.classList.add('page-link'); // Custom class for styling and identification
+            link.dataset.noteId = targetNote.id; // Store the target note's ID
+            link.textContent = text || pageTitle; // Use custom text or page title as link text
+
+            // Insert the link into the editor
+            savedRange.deleteContents(); // Remove any selected text if present
+            savedRange.insertNode(link); // Insert the new link element
+
+            closeLinkModal(); // Close the modal
+            updateCurrentNoteContent(); // Update note content and save
+        }
+
+        // Handle clicks on internal page links within the editor
+        editor.addEventListener('click', (e) => {
+            if (e.target.classList.contains('page-link')) {
+                e.preventDefault(); // Prevent default link behavior (navigating away)
+                const noteId = e.target.dataset.noteId; // Get the ID of the target note
+                if (noteId) {
+                    openNote(noteId); // Open the linked note
+                    showMessage(`Navigated to: ${e.target.textContent}`);
+                }
+            }
+        });
+
+        // Autocomplete suggestions for page titles in the link modal
+        linkPageTitle.addEventListener('input', () => {
+            const query = linkPageTitle.value.toLowerCase();
+            linkPageSuggestions.innerHTML = ''; // Clear previous suggestions
+            if (query.length > 0) {
+                // Filter notes that match the query and limit to 5 suggestions
+                const matchingNotes = notes.filter(note =>
+                    note.title.toLowerCase().includes(query)
+                ).slice(0, 5);
+
+                if (matchingNotes.length > 0) {
+                    linkPageSuggestions.classList.remove('hidden'); // Show suggestions container
+                    matchingNotes.forEach(note => {
+                        const suggestionDiv = document.createElement('div');
+                        suggestionDiv.className = 'p-2 cursor-pointer hover:bg-gray-100 text-sm';
+                        suggestionDiv.textContent = note.title;
+                        // When a suggestion is clicked, fill the input and hide suggestions
+                        suggestionDiv.addEventListener('click', () => {
+                            linkPageTitle.value = note.title;
+                            linkPageSuggestions.classList.add('hidden');
+                        });
+                        linkPageSuggestions.appendChild(suggestionDiv);
+                    });
+                } else {
+                    linkPageSuggestions.classList.add('hidden'); // Hide if no matches
+                }
+            } else {
+                linkPageSuggestions.classList.add('hidden'); // Hide if input is empty
+            }
+        });
+
+        // --- Markdown Parsing (Basic and Limited) ---
+        // This function attempts to convert basic markdown syntax to HTML on the fly.
+        // For a full-featured markdown editor, a more robust parsing library or
+        // a different approach (e.g., rendering markdown in a separate preview pane)
+        // would be necessary. This is a simplified, non-destructive approach.
+        function applyMarkdownFormatting() {
+            let html = editor.innerHTML;
+
+            // Headings (only at the start of a line)
+            // Note: contenteditable handles H1-H6 via formatBlock. This is for typed markdown.
+            html = html.replace(/^<h1>(.+?)<\/h1>$/gm, (match, p1) => {
+                if (!p1.startsWith('# ')) return match; // Prevent re-parsing if already H1
+                return p1.replace(/^#\s(.+)$/, '<h1>$1</h1>');
+            });
+            html = html.replace(/^<h2>(.+?)<\/h2>$/gm, (match, p1) => {
+                if (!p1.startsWith('## ')) return match;
+                return p1.replace(/^##\s(.+)$/, '<h2>$1</h2>');
+            });
+            html = html.replace(/^<h3>(.+?)<\/h3>$/gm, (match, p1) => {
+                if (!p1.startsWith('### ')) return match;
+                return p1.replace(/^###\s(.+)$/, '<h3>$1</h3>');
+            });
+
+
+            // Bold: **text** or __text__ (non-greedy)
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/__(.*?)__/g, '<strong>$1</strong>');
+
+            // Italic: *text* or _text_ (non-greedy)
+            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            html = html.replace(/_(.*?)_/g, '<em>$1</em>');
+
+            // Page Links: [[Page Title]]
+            // This needs to be done carefully to ensure existing page-links are not re-parsed
+            // and that only valid page titles are converted.
+            html = html.replace(/\[\[([^\]]+)\]\]/g, (match, pageTitle) => {
+                // Check if the pageTitle already exists as a link to prevent nested links
+                if (match.includes('<a class="page-link"')) {
+                    return match;
+                }
+                const existingNote = notes.find(n => n.title.toLowerCase() === pageTitle.toLowerCase());
+                if (existingNote) {
+                    // Create an actual link element with data-note-id
+                    return `<a href="#" class="page-link" data-note-id="${existingNote.id}">${pageTitle}</a>`;
+                }
+                return match; // If no matching page, leave the original text
+            });
+
+            // Update editor content only if there are changes to avoid disrupting cursor
+            if (editor.innerHTML !== html) {
+                // Save current cursor position before updating innerHTML
+                const selection = window.getSelection();
+                const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+                let caretOffset = 0;
+                if (range) {
+                    const preCaretRange = range.cloneRange();
+                    preCaretRange.selectNodeContents(editor);
+                    preCaretRange.setEnd(range.endContainer, range.endOffset);
+                    caretOffset = preCaretRange.toString().length;
+                }
+
+                editor.innerHTML = html; // Update the editor's content
+
+                // Restore cursor position after updating innerHTML
+                if (caretOffset > 0) {
+                    const newRange = document.createRange();
+                    const textNodes = getTextNodes(editor); // Helper function to get all text nodes
+                    let currentOffset = 0;
+                    for (const node of textNodes) {
+                        if (currentOffset + node.length >= caretOffset) {
+                            newRange.setStart(node, caretOffset - currentOffset);
+                            newRange.collapse(true);
+                            selection.removeAllRanges();
+                            selection.addRange(newRange);
+                            break;
+                        }
+                        currentOffset += node.length;
+                    }
+                }
+            }
+        }
+
+        /**
+         * Helper function to get all text nodes within an element.
+         * Used for accurately restoring cursor position after innerHTML updates.
+         * @param {HTMLElement} node - The root element to search within.
+         * @returns {Node[]} An array of text nodes.
+         */
+        function getTextNodes(node) {
+            const textNodes = [];
+            for (let child of node.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    textNodes.push(child);
+                } else if (child.nodeType === Node.ELEMENT_NODE && child.contentEditable !== 'false') {
+                    // Recursively get text nodes from child elements, excluding non-editable ones
+                    textNodes.push(...getTextNodes(child));
+                }
+            }
+            return textNodes;
+        }
+
+
+        // --- Event Listeners ---
+
+        // Sidebar actions
+        newNoteBtn.addEventListener('click', createNewNote);
+        saveBtn.addEventListener('click', saveNotes);
+
+        // Download current note as an HTML file
+        downloadBtn.addEventListener('click', () => {
+            if (!currentNoteId) {
+                showMessage('No note selected to download.', 'error');
+                return;
+            }
+            const note = notes.find(n => n.id === currentNoteId);
+            if (note) {
+                // Sanitize filename to be filesystem-friendly
+                const filename = `${note.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.html`;
+                // Create a basic HTML structure for the downloaded file, including minimal styling
+                const content = `<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>${note.title}</title>\n<style>\nbody { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }\nh1, h2, h3 { margin-top: 1.5em; margin-bottom: 0.5em; }\nstrong { font-weight: bold; }\nem { font-style: italic; }\n.highlight { background-color: #fde047; padding: 2px 0; border-radius: 3px; }\n.page-link { color: #2563eb; text-decoration: underline; }\n</style>\n</head>\n<body>\n${note.content}\n</body>\n</html>`;
+                const blob = new Blob([content], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); // Create a temporary anchor element
+                a.href = url;
+                a.download = filename; // Set the download filename
+                document.body.appendChild(a);
+                a.click(); // Programmatically click the link to trigger download
+                document.body.removeChild(a); // Clean up the temporary link
+                URL.revokeObjectURL(url); // Release the object URL
+                showMessage('Note downloaded!', 'success');
+            }
+        });
+
+        // Editor input and keyup events
+        editor.addEventListener('input', () => {
+            updateCurrentNoteContent(); // Update note content on every input
+            // applyMarkdownFormatting(); // Uncomment this line to enable real-time markdown parsing
+                                        // Be aware that aggressive parsing can sometimes disrupt typing.
+        });
+
+        editor.addEventListener('keyup', (e) => {
+            // You can add more specific markdown parsing triggers here if needed,
+            // e.g., if (e.key === 'Enter') applyMarkdownFormatting();
+        });
+
+        // Current note title editing
+        currentNoteTitleDisplay.addEventListener('blur', updateCurrentNoteTitle); // Save on blur
+        currentNoteTitleDisplay.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Prevent new line in title
+                currentNoteTitleDisplay.blur(); // Trigger blur to save title
+                editor.focus(); // Move focus to the editor
+            }
+        });
+
+        // Toolbar button click listeners
+        boldBtn.addEventListener('click', () => applyFormatting('bold'));
+        italicBtn.addEventListener('click', () => applyFormatting('italic'));
+        highlightBtn.addEventListener('click', toggleHighlight);
+        linkBtn.addEventListener('click', openLinkModal);
+        headingSelect.addEventListener('change', (e) => applyFormatting('formatBlock', e.target.value));
+        ulBtn.addEventListener('click', () => applyFormatting('insertUnorderedList'));
+        olBtn.addEventListener('click', () => applyFormatting('insertOrderedList'));
+
+        // Link Modal button listeners
+        cancelLinkBtn.addEventListener('click', closeLinkModal);
+        insertLinkBtn.addEventListener('click', insertPageLink);
+
+        // Global Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Check if focus is within the editor or title to apply shortcuts contextually
+            const isEditorFocused = editor.contains(document.activeElement);
+            const isTitleFocused = currentNoteTitleDisplay.contains(document.activeElement);
+
+            if (e.ctrlKey || e.metaKey) { // Ctrl for Windows/Linux, Cmd for Mac
+                switch (e.key.toLowerCase()) {
+                    case 'b': // Bold
+                        if (isEditorFocused) {
+                            e.preventDefault(); // Prevent browser default bold
+                            applyFormatting('bold');
+                        }
+                        break;
+                    case 'i': // Italic
+                        if (isEditorFocused) {
+                            e.preventDefault(); // Prevent browser default italic
+                            applyFormatting('italic');
+                        }
+                        break;
+                    case 's': // Save
+                        e.preventDefault(); // Prevent browser default save dialog
+                        saveNotes();
+                        break;
+                    case 'k': // Link
+                        if (isEditorFocused) {
+                            e.preventDefault(); // Prevent browser default link dialog
+                            openLinkModal();
+                        }
+                        break;
+                    case 'n': // New Note
+                        e.preventDefault(); // Prevent browser default new window
+                        createNewNote();
+                        break;
+                }
+            }
+        });
+
+        // Initial load of notes when the window is fully loaded
+        window.onload = loadNotes;
+    </script>
+</body>
+</html>
